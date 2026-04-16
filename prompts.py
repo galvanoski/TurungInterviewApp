@@ -4,6 +4,9 @@ Defines the system prompt that guides the model's behavior
 as a technical interviewer for a Senior .NET Developer position.
 """
 
+
+
+SYTEM_PROMPT_ZERO_SHOT = """You are a technical interviewer in software development. Help the user to prepare for a Senior .NET Developer interview. Be concise."""
 # ──────────────────────────────────────────────
 #  SYSTEM PROMPT — Senior .NET Interviewer
 # ──────────────────────────────────────────────
