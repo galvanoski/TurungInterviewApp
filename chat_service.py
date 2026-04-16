@@ -3,6 +3,9 @@ Chat service module.
 Handles communication with the OpenAI API.
 """
 
+from pyexpat.errors import messages
+from xmlrpc import client
+
 from openai import OpenAI
 from config import OPENAI_API_KEY, OPENAI_MODEL
 from prompts import SYSTEM_PROMPT
@@ -10,7 +13,7 @@ from prompts import SYSTEM_PROMPT
 
 def get_client() -> OpenAI:
     """Creates and returns the OpenAI client."""
-    return OpenAI(api_key=OPENAI_API_KEY)
+    return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENAI_API_KEY)
 
 
 # ──────────────────────────────────────────────
@@ -29,12 +32,12 @@ def get_interview_response(client: OpenAI, conversation_history: list[dict]) -> 
         Text of the model's response.
     """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + conversation_history
-
+            
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=messages,
         temperature=0.7,
-        max_tokens=1024,
+       
     )
 
     return response.choices[0].message.content
