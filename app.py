@@ -134,7 +134,7 @@ if page == "🎙️ Interview":
             st.divider()
             st.warning(
                 f"📂 **A previous interview session was found** with a similar job description "
-                f"({similar['message_count']} messages, similarity: {1 - similar['distance']:.0%}).\n\n"
+                f"({len(similar['messages'])} messages, similarity: {1 - similar['distance']:.0%}).\n\n"
                 f"**Previous job description (preview):**\n"
                 f"> {similar['job_desc'][:300]}{'...' if len(similar['job_desc']) > 300 else ''}"
             )
