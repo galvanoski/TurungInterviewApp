@@ -4,7 +4,14 @@ Run with:  streamlit run app.py
 """
 
 import streamlit as st
-from chat_service import get_client, get_interview_response, get_response_with_prompt, validate_job_description, check_prompt_injection
+from chat_service import (
+    get_interview_response,
+    get_agent_interview_response,
+    get_response_with_prompt,
+    validate_job_description,
+    check_prompt_injection,
+    TOOL_DISPLAY_NAMES,
+)
 from prompts import PROMPTS
 from scraper import scrape_job_url
 
@@ -15,10 +22,6 @@ st.set_page_config(
     page_icon="💼",
     layout="wide",
 )
-
-# ── Shared client ─────────────────────────────
-if "client" not in st.session_state:
-    st.session_state.client = get_client()
 
 # ── Sidebar ───────────────────────────────────
 with st.sidebar:
@@ -99,13 +102,13 @@ if page == "🎙️ Interview":
                 st.warning("Please enter a job description or URL first.")
             else:
                 with st.spinner("🔍 Checking for prompt injection..."):
-                    injection = check_prompt_injection(st.session_state.client, iv_job_text.strip())
+                    injection = check_prompt_injection(iv_job_text.strip())
 
                 if injection.get("injection_detected"):
                     st.error(f"🛑 **Prompt injection detected.** {injection.get('reason', 'Your input appears to contain instructions that try to manipulate the AI.')} Please provide a legitimate job description.")
                 else:
                     with st.spinner("🔍 Validating job description..."):
-                        validation = validate_job_description(st.session_state.client, iv_job_text.strip())
+                        validation = validate_job_description(iv_job_text.strip())
 
                     if not validation.get("valid"):
                         st.error(f"🚫 **Invalid input.** {validation.get('reason', 'The text does not appear to be a legitimate job description.')}")
@@ -123,24 +126,35 @@ if page == "🎙️ Interview":
         if not st.session_state.messages:
             job_context = st.session_state.get("interview_job_desc", "")
             initial_user_msg = f"Here is the job description I want to prepare for:\n\n{job_context}\n\nBased on this job description, start the interview with the most relevant question."
-            with st.spinner("Preparing the interview..."):
-                first_message = get_interview_response(
-                    st.session_state.client,
-                    [{"role": "user", "content": initial_user_msg}],
-                    temperature=st.session_state.temperature,
-                    model=st.session_state.model,
-                )
-            st.session_state.messages.append({"role": "assistant", "content": first_message})
+            spinner_text = "🤖 Agent is preparing the interview..." if st.session_state.get("agent_mode") else "Preparing the interview..."
+            with st.spinner(spinner_text):
+                if st.session_state.get("agent_mode"):
+                    first_message, tools_used = get_agent_interview_response(
+                        [{"role": "user", "content": initial_user_msg}],
+                        temperature=st.session_state.temperature,
+                        model=st.session_state.model,
+                    )
+                else:
+                    first_message = get_interview_response(
+                        [{"role": "user", "content": initial_user_msg}],
+                        temperature=st.session_state.temperature,
+                        model=st.session_state.model,
+                    )
+                    tools_used = []
+            st.session_state.messages.append({"role": "assistant", "content": first_message, "tools_used": tools_used})
 
         # Display chat history
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
+                if msg.get("tools_used"):
+                    friendly = [TOOL_DISPLAY_NAMES.get(t, t) for t in set(msg["tools_used"])]
+                    st.caption(f"Tools used: {', '.join(friendly)}")
 
         # User input
         if user_input := st.chat_input("Type your answer here..."):
             # Check for prompt injection before processing
-            injection = check_prompt_injection(st.session_state.client, user_input)
+            injection = check_prompt_injection(user_input)
             if injection.get("injection_detected"):
                 st.error(f"🛑 **Prompt injection detected.** {injection.get('reason', 'Your message appears to contain instructions that try to manipulate the AI.')} Please rephrase your answer.")
             else:
@@ -150,19 +164,36 @@ if page == "🎙️ Interview":
                     st.markdown(user_input)
 
                 with st.chat_message("assistant"):
-                    with st.spinner("Evaluating your answer..."):
-                        reply = get_interview_response(
-                            st.session_state.client,
-                            st.session_state.messages,
-                            temperature=st.session_state.temperature,
-                            model=st.session_state.model,
-                        )
+                    spinner_text = "🤖 Agent is evaluating..." if st.session_state.get("agent_mode") else "Evaluating your answer..."
+                    with st.spinner(spinner_text):
+                        if st.session_state.get("agent_mode"):
+                            reply, tools_used = get_agent_interview_response(
+                                st.session_state.messages,
+                                temperature=st.session_state.temperature,
+                                model=st.session_state.model,
+                            )
+                        else:
+                            reply = get_interview_response(
+                                st.session_state.messages,
+                                temperature=st.session_state.temperature,
+                                model=st.session_state.model,
+                            )
+                            tools_used = []
                     st.markdown(reply)
+                    if tools_used:
+                        friendly = [TOOL_DISPLAY_NAMES.get(t, t) for t in set(tools_used)]
+                        st.caption(f"Tools used: {', '.join(friendly)}")
 
-                st.session_state.messages.append({"role": "assistant", "content": reply})
+                st.session_state.messages.append({"role": "assistant", "content": reply, "tools_used": tools_used})
 
     # Sidebar controls for interview
     with st.sidebar:
+        agent_mode = st.checkbox(
+            "🤖 Agent Mode",
+            value=False,
+            help="Enable AI agent with tools: web search for .NET docs, code review, and documentation lookup.",
+        )
+        st.session_state.agent_mode = agent_mode
         if st.button("🔄 Restart interview"):
             st.session_state.messages = []
             st.session_state.interview_validated = False
@@ -228,13 +259,13 @@ elif page == "🔬 Prompt Lab":
         st.session_state.pop("lab_validation", None)
 
         with st.spinner("🔍 Checking for prompt injection..."):
-            injection = check_prompt_injection(st.session_state.client, job_text.strip())
+            injection = check_prompt_injection(job_text.strip())
 
         if injection.get("injection_detected"):
             st.error(f"🛑 **Prompt injection detected.** {injection.get('reason', 'Your input appears to contain instructions that try to manipulate the AI.')} Please provide a legitimate job description.")
         else:
             with st.spinner("🔍 Validating job description..."):
-                validation = validate_job_description(st.session_state.client, job_text.strip())
+                validation = validate_job_description(job_text.strip())
                 st.session_state.lab_validation = validation
 
             if not validation.get("valid"):
@@ -255,7 +286,6 @@ elif page == "🔬 Prompt Lab":
                     progress.progress((i) / total, text=f"Running {label}...")
                     try:
                         result = get_response_with_prompt(
-                            st.session_state.client,
                             prompt_text,
                             user_message,
                             temperature=st.session_state.temperature,
