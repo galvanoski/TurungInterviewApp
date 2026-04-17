@@ -14,6 +14,7 @@ from chat_service import (
 )
 from prompts import PROMPTS
 from scraper import scrape_job_url
+from vector_store import search_similar_session, save_session
 
 
 # ── Page configuration ────────────────────────
@@ -115,13 +116,58 @@ if page == "🎙️ Interview":
                     elif not validation.get("dotnet_related"):
                         st.warning(f"⚠️ **Not .NET-related.** {validation.get('reason', 'This job description does not seem to involve .NET technologies.')} Please provide a .NET developer job description.")
                     else:
-                        st.session_state.interview_validated = True
-                        st.session_state.interview_job_desc = iv_job_text.strip()
-                        st.session_state.messages = []
-                        st.rerun()
+                        # Check vector DB for similar previous session
+                        similar = search_similar_session(iv_job_text.strip())
+                        if similar:
+                            st.session_state.pending_similar = similar
+                            st.session_state.pending_job_desc = iv_job_text.strip()
+                            st.rerun()
+                        else:
+                            st.session_state.interview_validated = True
+                            st.session_state.interview_job_desc = iv_job_text.strip()
+                            st.session_state.messages = []
+                            st.rerun()
+
+        # ── Similar session found — ask user ──
+        if st.session_state.get("pending_similar"):
+            similar = st.session_state.pending_similar
+            st.divider()
+            st.warning(
+                f"📂 **A previous interview session was found** with a similar job description "
+                f"({similar['message_count']} messages, similarity: {1 - similar['distance']:.0%}).\n\n"
+                f"**Previous job description (preview):**\n"
+                f"> {similar['job_desc'][:300]}{'...' if len(similar['job_desc']) > 300 else ''}"
+            )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("▶️ Continue previous interview", type="primary", use_container_width=True):
+                    st.session_state.interview_validated = True
+                    st.session_state.interview_job_desc = similar["job_desc"]
+                    st.session_state.messages = similar["messages"]
+                    st.session_state.pop("pending_similar", None)
+                    st.session_state.pop("pending_job_desc", None)
+                    st.rerun()
+            with col2:
+                if st.button("🆕 Start a new interview", use_container_width=True):
+                    st.session_state.interview_validated = True
+                    st.session_state.interview_job_desc = st.session_state.pending_job_desc
+                    st.session_state.messages = []
+                    st.session_state.pop("pending_similar", None)
+                    st.session_state.pop("pending_job_desc", None)
+                    st.rerun()
 
     # ── Interview chat (after validation) ─────
     if st.session_state.interview_validated:
+        # Agent mode banner
+        if st.session_state.get("agent_mode"):
+            st.success(
+                "🤖 **Agent Mode is ON** — The interviewer can now:\n"
+                "- 🔍 Search the web for up-to-date .NET documentation and best practices\n"
+                "- 📄 Read specific documentation pages (e.g. Microsoft Learn)\n"
+                "- 🔬 Perform in-depth code review when you paste C# code\n\n"
+                "💡 **Tip:** Try pasting a C# code snippet in your answer to get detailed feedback!"
+            )
         # Auto-start with job description context
         if not st.session_state.messages:
             job_context = st.session_state.get("interview_job_desc", "")
@@ -142,6 +188,7 @@ if page == "🎙️ Interview":
                     )
                     tools_used = []
             st.session_state.messages.append({"role": "assistant", "content": first_message, "tools_used": tools_used})
+            save_session(st.session_state.interview_job_desc, st.session_state.messages)
 
         # Display chat history
         for msg in st.session_state.messages:
@@ -152,7 +199,8 @@ if page == "🎙️ Interview":
                     st.caption(f"Tools used: {', '.join(friendly)}")
 
         # User input
-        if user_input := st.chat_input("Type your answer here..."):
+        chat_placeholder = "Type your answer here (paste C# code for agent review)..." if st.session_state.get("agent_mode") else "Type your answer here..."
+        if user_input := st.chat_input(chat_placeholder):
             # Check for prompt injection before processing
             injection = check_prompt_injection(user_input)
             if injection.get("injection_detected"):
@@ -185,6 +233,7 @@ if page == "🎙️ Interview":
                         st.caption(f"Tools used: {', '.join(friendly)}")
 
                 st.session_state.messages.append({"role": "assistant", "content": reply, "tools_used": tools_used})
+                save_session(st.session_state.interview_job_desc, st.session_state.messages)
 
     # Sidebar controls for interview
     with st.sidebar:
@@ -194,10 +243,22 @@ if page == "🎙️ Interview":
             help="Enable AI agent with tools: web search for .NET docs, code review, and documentation lookup.",
         )
         st.session_state.agent_mode = agent_mode
+        if agent_mode:
+            st.info(
+                "**Agent tools active:**\n"
+                "- 🔍 **Web Search** — searches .NET docs live\n"
+                "- 📄 **Fetch Docs** — reads specific URLs\n"
+                "- 🔬 **Code Review** — analyzes your C# code"
+            )
         if st.button("🔄 Restart interview"):
+            # Save current session before restarting
+            if st.session_state.get("interview_job_desc") and st.session_state.get("messages"):
+                save_session(st.session_state.interview_job_desc, st.session_state.messages)
             st.session_state.messages = []
             st.session_state.interview_validated = False
             st.session_state.pop("interview_job_desc", None)
+            st.session_state.pop("pending_similar", None)
+            st.session_state.pop("pending_job_desc", None)
             st.rerun()
 
 # ══════════════════════════════════════════════
