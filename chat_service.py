@@ -87,7 +87,7 @@ def check_prompt_injection(client: OpenAI, text: str) -> dict:
 # ──────────────────────────────────────────────
 #  OPENAI MODEL CALL
 # ──────────────────────────────────────────────
-def get_interview_response(client: OpenAI, conversation_history: list[dict]) -> str:
+def get_interview_response(client: OpenAI, conversation_history: list[dict], temperature: float = 0.7, model: str = OPENAI_MODEL) -> str:
     """
     Sends the conversation history to the model and returns the response.
 
@@ -95,6 +95,8 @@ def get_interview_response(client: OpenAI, conversation_history: list[dict]) -> 
         client: OpenAI client instance.
         conversation_history: List of messages with format
             [{"role": "user"|"assistant", "content": "..."}]
+        temperature: Sampling temperature (0.0 to 1.0).
+        model: Model identifier to use.
 
     Returns:
         Text of the model's response.
@@ -102,16 +104,15 @@ def get_interview_response(client: OpenAI, conversation_history: list[dict]) -> 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + conversation_history
             
     response = client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model=model,
         messages=messages,
-        temperature=0.7,
-       
+        temperature=temperature,
     )
 
     return response.choices[0].message.content
 
 
-def get_response_with_prompt(client: OpenAI, system_prompt: str, user_message: str) -> str:
+def get_response_with_prompt(client: OpenAI, system_prompt: str, user_message: str, temperature: float = 0.7, model: str = OPENAI_MODEL) -> str:
     """
     Sends a single user message with a given system prompt and returns the response.
     Used for the prompt technique comparison feature.
@@ -122,9 +123,9 @@ def get_response_with_prompt(client: OpenAI, system_prompt: str, user_message: s
     ]
 
     response = client.chat.completions.create(
-        model=OPENAI_MODEL,
+        model=model,
         messages=messages,
-        temperature=0.7,
+        temperature=temperature,
     )
 
     return response.choices[0].message.content

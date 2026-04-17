@@ -25,6 +25,29 @@ with st.sidebar:
     st.header("Navigation")
     page = st.radio("", ["🎙️ Interview", "🔬 Prompt Lab"], label_visibility="collapsed")
     st.divider()
+    st.header("Model Settings")
+    AVAILABLE_MODELS = {
+        "openai/gpt-5-mini": "GPT-5 Mini (recommended)",
+        "openai/gpt-5-nano": "GPT-5 Nano (cheaper)",
+        "openai/gpt-5": "GPT-5 (higher-capability)",
+    }
+    selected_model = st.selectbox(
+        "🤖 Model",
+        options=list(AVAILABLE_MODELS.keys()),
+        index=0,
+        format_func=lambda x: AVAILABLE_MODELS[x],
+        help="Choose the AI model. Mini is the best balance of quality and cost.",
+    )
+    st.session_state.model = selected_model
+    temperature = st.selectbox(
+        "🌡️ Temperature",
+        options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        index=7,
+        format_func=lambda x: f"{x:.1f}" + (" (precise)" if x == 0.0 else " (creative)" if x == 1.0 else " (balanced)" if x == 0.5 else ""),
+        help="Lower = more focused and deterministic. Higher = more creative and varied.",
+    )
+    st.session_state.temperature = temperature
+    st.divider()
 
 # ══════════════════════════════════════════════
 #  PAGE 1 — Interview Chat
@@ -104,6 +127,8 @@ if page == "🎙️ Interview":
                 first_message = get_interview_response(
                     st.session_state.client,
                     [{"role": "user", "content": initial_user_msg}],
+                    temperature=st.session_state.temperature,
+                    model=st.session_state.model,
                 )
             st.session_state.messages.append({"role": "assistant", "content": first_message})
 
@@ -129,6 +154,8 @@ if page == "🎙️ Interview":
                         reply = get_interview_response(
                             st.session_state.client,
                             st.session_state.messages,
+                            temperature=st.session_state.temperature,
+                            model=st.session_state.model,
                         )
                     st.markdown(reply)
 
@@ -231,6 +258,8 @@ elif page == "🔬 Prompt Lab":
                             st.session_state.client,
                             prompt_text,
                             user_message,
+                            temperature=st.session_state.temperature,
+                            model=st.session_state.model,
                         )
                         st.session_state.lab_results[key] = result
                     except Exception as e:
