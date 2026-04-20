@@ -78,7 +78,8 @@ def _render_job_input():
         if not iv_job_text.strip():
             st.warning("Please enter a job description or URL first.")
         else:
-            _validate_and_start(iv_job_text.strip())
+            with st.spinner("🔍 Validating job description..."):
+                _validate_and_start(iv_job_text.strip())
 
     # Similar session found — ask user
     if st.session_state.get("pending_similar"):
@@ -87,15 +88,13 @@ def _render_job_input():
 
 def _validate_and_start(job_text: str):
     """Run injection check, validation, and vector DB search."""
-    with st.spinner("🔍 Checking for prompt injection..."):
-        injection = check_prompt_injection(job_text)
+    injection = check_prompt_injection(job_text)
 
     if injection.get("injection_detected"):
         st.error(f"🛑 **Prompt injection detected.** {injection.get('reason', '')} Please provide a legitimate job description.")
         return
 
-    with st.spinner("🔍 Validating job description..."):
-        validation = validate_job_description(job_text)
+    validation = validate_job_description(job_text)
 
     if not validation.get("valid"):
         st.error(f"🚫 **Invalid input.** {validation.get('reason', 'The text does not appear to be a legitimate job description.')}")
