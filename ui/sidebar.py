@@ -24,14 +24,92 @@ def render_sidebar() -> str:
         )
         st.session_state.model = selected_model
 
-        temperature = st.selectbox(
+        temperature = st.slider(
             "🌡️ Temperature",
-            options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-            index=5,
-            format_func=lambda x: f"{x:.1f}" + (" (precise)" if x == 0.0 else " (creative)" if x == 1.0 else " (balanced)" if x == 0.5 else ""),
-            help="Lower = more focused and deterministic. Higher = more creative and varied.",
+            min_value=0.0,
+            max_value=2.0,
+            value=0.5,
+            step=0.1,
+            help="Controls randomness. Lower = more focused, higher = more creative.",
         )
         st.session_state.temperature = temperature
+
+        top_p = st.slider(
+            "🎯 Top P (nucleus sampling)",
+            min_value=0.0,
+            max_value=1.0,
+            value=1.0,
+            step=0.05,
+            help="Limits token selection to the top cumulative probability. Lower = more focused.",
+        )
+        st.session_state.top_p = top_p
+
+        top_k = st.slider(
+            "🔢 Top K",
+            min_value=0,
+            max_value=100,
+            value=0,
+            step=1,
+            help="Limits token selection to the top K most likely tokens. 0 = disabled.",
+        )
+        st.session_state.top_k = top_k
+
+        frequency_penalty = st.slider(
+            "🔁 Frequency Penalty",
+            min_value=-2.0,
+            max_value=2.0,
+            value=0.0,
+            step=0.1,
+            help="Penalizes repeated tokens based on frequency. Positive = less repetition.",
+        )
+        st.session_state.frequency_penalty = frequency_penalty
+
+        presence_penalty = st.slider(
+            "📌 Presence Penalty",
+            min_value=-2.0,
+            max_value=2.0,
+            value=0.0,
+            step=0.1,
+            help="Penalizes tokens that have appeared at all. Positive = encourages new topics.",
+        )
+        st.session_state.presence_penalty = presence_penalty
+
+        max_tokens = st.number_input(
+            "📏 Max Tokens",
+            min_value=0,
+            max_value=16384,
+            value=0,
+            step=256,
+            help="Maximum number of tokens to generate. 0 = no limit (model default).",
+        )
+        st.session_state.max_tokens = max_tokens
+
         st.divider()
 
     return page
+
+
+def get_model_kwargs() -> dict:
+    """Collect the current model kwargs from session_state into a dict."""
+    kwargs = {}
+    top_p = st.session_state.get("top_p", 1.0)
+    if top_p < 1.0:
+        kwargs["top_p"] = top_p
+
+    top_k = st.session_state.get("top_k", 0)
+    if top_k > 0:
+        kwargs["top_k"] = top_k
+
+    freq = st.session_state.get("frequency_penalty", 0.0)
+    if freq != 0.0:
+        kwargs["frequency_penalty"] = freq
+
+    pres = st.session_state.get("presence_penalty", 0.0)
+    if pres != 0.0:
+        kwargs["presence_penalty"] = pres
+
+    max_tok = st.session_state.get("max_tokens", 0)
+    if max_tok > 0:
+        kwargs["max_tokens"] = max_tok
+
+    return kwargs

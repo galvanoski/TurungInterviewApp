@@ -9,7 +9,9 @@ from core.security import check_prompt_injection
 from core.prompts import PROMPTS, TECHNIQUE_META
 from services.validation import validate_job_description
 from services.prompt_lab import get_response_with_prompt
+from services.pricing import format_cost_caption
 from data.scraper import scrape_job_url
+from ui.sidebar import get_model_kwargs
 
 
 def render():
@@ -108,15 +110,17 @@ def _run_comparison(job_text: str):
         label, icon = TECHNIQUE_META.get(key, (key, "🔹"))
         progress.progress(i / total, text=f"Running {label}...")
         try:
-            result = get_response_with_prompt(
+            result, usage = get_response_with_prompt(
                 prompt_text,
                 user_message,
                 temperature=st.session_state.temperature,
                 model=st.session_state.model,
+                **get_model_kwargs(),
             )
-            st.session_state.lab_results[key] = result
+            cost_caption = format_cost_caption(st.session_state.model, usage)
+            st.session_state.lab_results[key] = {"text": result, "cost": cost_caption}
         except Exception as e:
-            st.session_state.lab_results[key] = f"⚠️ Error: {e}"
+            st.session_state.lab_results[key] = {"text": f"\u26a0\ufe0f Error: {e}", "cost": ""}
 
     progress.progress(1.0, text="Done!")
 
@@ -127,7 +131,16 @@ def _render_results():
         st.divider()
         st.markdown("### Results by Technique")
 
-        for key, response_text in st.session_state.lab_results.items():
-            label, icon = TECHNIQUE_META.get(key, (key, "🔹"))
+        for key, result_data in st.session_state.lab_results.items():
+            label, icon = TECHNIQUE_META.get(key, (key, "\U0001f539"))
+            # Support both old (string) and new (dict) format
+            if isinstance(result_data, dict):
+                response_text = result_data["text"]
+                cost_caption = result_data.get("cost", "")
+            else:
+                response_text = result_data
+                cost_caption = ""
             with st.expander(f"{icon} {label}", expanded=False):
                 st.markdown(response_text)
+                if cost_caption:
+                    st.caption(cost_caption)

@@ -9,8 +9,10 @@ from core.security import check_prompt_injection
 from core.prompts import TOOL_DISPLAY_NAMES
 from services.interview import get_interview_response, get_agent_interview_response
 from services.validation import validate_job_description
+from services.pricing import format_cost_caption, calculate_cost
 from data.scraper import scrape_job_url
 from data.vector_store import search_similar_session, save_session
+from ui.sidebar import get_model_kwargs
 
 
 def render():
@@ -168,6 +170,8 @@ def _render_chat():
             if msg.get("tools_used"):
                 friendly = [TOOL_DISPLAY_NAMES.get(t, t) for t in set(msg["tools_used"])]
                 st.caption(f"Tools used: {', '.join(friendly)}")
+            if msg.get("cost_caption"):
+                st.caption(msg["cost_caption"])
 
     # User input
     placeholder = "Type your answer here (paste C# code for agent review)..." if is_agent else "Type your answer here..."
@@ -185,19 +189,23 @@ def _generate_first_message(is_agent: bool):
     spinner_text = "🤖 Agent is preparing the interview..." if is_agent else "Preparing the interview..."
     with st.spinner(spinner_text):
         if is_agent:
-            first_message, tools_used = get_agent_interview_response(
+            first_message, tools_used, usage = get_agent_interview_response(
                 [{"role": "user", "content": initial_msg}],
                 temperature=st.session_state.temperature,
                 model=st.session_state.model,
+                **get_model_kwargs(),
             )
         else:
-            first_message = get_interview_response(
+            first_message, usage = get_interview_response(
                 [{"role": "user", "content": initial_msg}],
                 temperature=st.session_state.temperature,
                 model=st.session_state.model,
+                **get_model_kwargs(),
             )
             tools_used = []
-    st.session_state.messages.append({"role": "assistant", "content": first_message, "tools_used": tools_used})
+    cost_caption = format_cost_caption(st.session_state.model, usage)
+    st.session_state.messages.append({"role": "assistant", "content": first_message, "tools_used": tools_used, "cost_caption": cost_caption})
+    _accumulate_session_cost(usage)
     save_session(st.session_state.interview_job_desc, st.session_state.messages)
     st.rerun()
 
@@ -218,24 +226,30 @@ def _handle_user_input(user_input: str, is_agent: bool):
         spinner_text = "🤖 Agent is evaluating..." if is_agent else "Evaluating your answer..."
         with st.spinner(spinner_text):
             if is_agent:
-                reply, tools_used = get_agent_interview_response(
+                reply, tools_used, usage = get_agent_interview_response(
                     st.session_state.messages,
                     temperature=st.session_state.temperature,
                     model=st.session_state.model,
+                    **get_model_kwargs(),
                 )
             else:
-                reply = get_interview_response(
+                reply, usage = get_interview_response(
                     st.session_state.messages,
                     temperature=st.session_state.temperature,
                     model=st.session_state.model,
+                    **get_model_kwargs(),
                 )
                 tools_used = []
         st.markdown(reply)
         if tools_used:
             friendly = [TOOL_DISPLAY_NAMES.get(t, t) for t in set(tools_used)]
             st.caption(f"Tools used: {', '.join(friendly)}")
+        cost_caption = format_cost_caption(st.session_state.model, usage)
+        if cost_caption:
+            st.caption(cost_caption)
 
-    st.session_state.messages.append({"role": "assistant", "content": reply, "tools_used": tools_used})
+    st.session_state.messages.append({"role": "assistant", "content": reply, "tools_used": tools_used, "cost_caption": cost_caption})
+    _accumulate_session_cost(usage)
     save_session(st.session_state.interview_job_desc, st.session_state.messages)
     st.rerun()
 
@@ -261,7 +275,26 @@ def _render_sidebar_controls():
                 save_session(st.session_state.interview_job_desc, st.session_state.messages)
             st.session_state.messages = []
             st.session_state.interview_validated = False
+            st.session_state.session_cost = 0.0
             st.session_state.pop("interview_job_desc", None)
             st.session_state.pop("pending_similar", None)
             st.session_state.pop("pending_job_desc", None)
             st.rerun()
+
+        # Show total session cost
+        session_cost = st.session_state.get("session_cost", 0.0)
+        if session_cost > 0:
+            st.divider()
+            st.metric("💰 Session Cost", f"${session_cost:.6f}")
+
+
+def _accumulate_session_cost(usage: dict):
+    """Add the cost of this request to the running session total."""
+    if not usage:
+        return
+    cost = calculate_cost(
+        st.session_state.model,
+        usage.get("prompt_tokens", 0),
+        usage.get("completion_tokens", 0),
+    )
+    st.session_state.session_cost = st.session_state.get("session_cost", 0.0) + cost
