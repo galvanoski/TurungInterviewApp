@@ -132,7 +132,17 @@ def _render_resume_prompt():
         if st.button("▶️ Continue previous interview", type="primary", use_container_width=True):
             st.session_state.interview_validated = True
             st.session_state.interview_job_desc = similar["job_desc"]
-            st.session_state.messages = similar["messages"]
+            # Ensure restored messages have all required keys
+            restored = []
+            for m in similar["messages"]:
+                restored.append({
+                    "role": m["role"],
+                    "content": m["content"],
+                    "tools_used": m.get("tools_used", []),
+                    "cost_caption": m.get("cost_caption", ""),
+                })
+            st.session_state.messages = restored
+            st.session_state.session_cost = 0.0
             st.session_state.pop("pending_similar", None)
             st.session_state.pop("pending_job_desc", None)
             st.rerun()
