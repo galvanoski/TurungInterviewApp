@@ -74,12 +74,19 @@ def _render_job_input():
             label_visibility="collapsed",
         )
 
-    if st.button("✅ Validate & Start Interview", type="primary", use_container_width=True):
+    is_validating = st.session_state.get("is_validating", False)
+
+    if st.button("✅ Validate & Start Interview", type="primary", use_container_width=True, disabled=is_validating):
         if not iv_job_text.strip():
             st.warning("Please enter a job description or URL first.")
         else:
-            with st.spinner("🔍 Validating job description..."):
-                _validate_and_start(iv_job_text.strip())
+            st.session_state.is_validating = True
+            st.rerun()
+
+    if is_validating and iv_job_text.strip():
+        with st.spinner("🔍 Validating job description..."):
+            _validate_and_start(iv_job_text.strip())
+        st.session_state.is_validating = False
 
     # Similar session found — ask user
     if st.session_state.get("pending_similar"):
