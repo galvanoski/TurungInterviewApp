@@ -27,7 +27,7 @@ def render_sidebar() -> str:
         temperature = st.selectbox(
             "🌡️ Temperature",
             options=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-            index=7,
+            index=5,
             format_func=lambda x: f"{x:.1f}" + (" (precise)" if x == 0.0 else " (creative)" if x == 1.0 else " (balanced)" if x == 0.5 else ""),
             help="Lower = more focused and deterministic. Higher = more creative and varied.",
         )
