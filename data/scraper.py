@@ -31,7 +31,7 @@ _HEADERS = {
 }
 
 
-def _fetch_via_jina(url: str) -> str | None:
+def fetch_via_jina(url: str) -> str | None:
     """
     Use Jina Reader API to render JS-heavy pages and get clean text.
     Free, no auth required. Handles SPAs and cookie walls.
@@ -53,20 +53,15 @@ def _fetch_via_jina(url: str) -> str | None:
 
 
 def _extract_json_ld(soup: BeautifulSoup) -> str | None:
-    """
-    Try to extract job description from JSON-LD structured data.
-    Many job sites embed schema.org/JobPosting data this way.
-    """
+    """Extract job description from JSON-LD structured data."""
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(script.string or "")
         except (json.JSONDecodeError, TypeError):
             continue
 
-        # Could be a single object or a list
         items = data if isinstance(data, list) else [data]
 
-        # Also check @graph arrays
         for item in items:
             if isinstance(item, dict) and item.get("@graph"):
                 items.extend(item["@graph"])
@@ -99,7 +94,6 @@ def _extract_json_ld(soup: BeautifulSoup) -> str | None:
                             parts.append(f"Location: {', '.join(locs)}")
                 desc = item.get("description", "")
                 if desc:
-                    # Description may contain HTML
                     desc_soup = BeautifulSoup(desc, "html.parser")
                     desc_text = desc_soup.get_text(separator="\n", strip=True)
                     parts.append(f"\n{desc_text}")
@@ -117,9 +111,7 @@ def _extract_json_ld(soup: BeautifulSoup) -> str | None:
 
 
 def _extract_meta_tags(soup: BeautifulSoup) -> str | None:
-    """
-    Extract job info from Open Graph and meta description tags.
-    """
+    """Extract job info from Open Graph and meta description tags."""
     parts = []
     og_title = soup.find("meta", property="og:title")
     if og_title and og_title.get("content"):
@@ -140,15 +132,11 @@ def _extract_meta_tags(soup: BeautifulSoup) -> str | None:
 
 
 def _extract_main_content(soup: BeautifulSoup) -> str:
-    """
-    Fallback: extract text from the most likely content areas of the page.
-    """
-    # Remove noise elements
+    """Fallback: extract text from the most likely content areas of the page."""
     for tag in soup(["script", "style", "nav", "footer", "header", "aside",
                      "form", "button", "iframe", "noscript"]):
         tag.decompose()
 
-    # Try common job description containers
     selectors = [
         "[class*='job-description']",
         "[class*='jobDescription']",
@@ -171,7 +159,6 @@ def _extract_main_content(soup: BeautifulSoup) -> str:
             if len(text) > 100:
                 return text[:8000]
 
-    # Last resort: get body text
     body = soup.find("body")
     if body:
         return body.get_text(separator="\n", strip=True)[:8000]
@@ -179,12 +166,7 @@ def _extract_main_content(soup: BeautifulSoup) -> str:
 
 
 def _fetch_html(url: str) -> str:
-    """
-    Fetch the HTML content of a URL using multiple strategies:
-    1. cloudscraper (handles Cloudflare & anti-bot protections)
-    2. requests with full browser headers (fallback)
-    """
-    # Strategy 1: cloudscraper — bypasses most anti-bot measures
+    """Fetch HTML using cloudscraper (primary) and requests (fallback)."""
     try:
         scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "mobile": False}
@@ -196,13 +178,11 @@ def _fetch_html(url: str) -> str:
     except Exception:
         pass
 
-    # Strategy 2: requests with full browser headers
     session = requests.Session()
     session.headers.update(_HEADERS)
     resp = session.get(url, timeout=25, allow_redirects=True)
     resp.raise_for_status()
 
-    # Some sites set cookies on first hit — retry
     if "cookie" in resp.text.lower()[:2000] and len(resp.text) < 5000:
         resp = session.get(url, timeout=25, allow_redirects=True)
 
@@ -214,29 +194,19 @@ def scrape_job_url(url: str) -> dict:
     Scrape a job posting URL and extract the description.
 
     Returns:
-        dict with keys:
-        - success (bool): whether content was extracted
-        - text (str): extracted job description text
-        - method (str): which extraction method succeeded
-        - error (str | None): error message if failed
+        dict with keys: success, text, method, error
     """
-    # ── Attempt 1: Direct HTML fetch + parsing ──
     try:
         html = _fetch_html(url)
         soup = BeautifulSoup(html, "html.parser")
 
-        # Strategy 1a: JSON-LD structured data (most reliable)
         json_ld_text = _extract_json_ld(soup)
         if json_ld_text:
             return {"success": True, "text": json_ld_text, "method": "JSON-LD (structured data)", "error": None}
 
-        # Strategy 1b: Meta tags (title + description)
         meta_text = _extract_meta_tags(soup)
-
-        # Strategy 1c: Main content extraction
         main_text = _extract_main_content(soup)
 
-        # Combine meta + main if both exist
         if meta_text and main_text:
             combined = f"{meta_text}\n\n{main_text}"
             return {"success": True, "text": combined[:8000], "method": "Meta tags + HTML content", "error": None}
@@ -245,10 +215,9 @@ def scrape_job_url(url: str) -> dict:
         elif meta_text:
             return {"success": True, "text": meta_text, "method": "Meta tags only", "error": None}
     except Exception:
-        pass  # Fall through to Jina Reader
+        pass
 
-    # ── Attempt 2: Jina Reader API (renders JS, handles SPAs) ──
-    jina_text = _fetch_via_jina(url)
+    jina_text = fetch_via_jina(url)
     if jina_text:
         return {"success": True, "text": jina_text, "method": "Jina Reader (JS-rendered)", "error": None}
 

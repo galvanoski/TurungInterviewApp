@@ -1,6 +1,7 @@
 streamlit
 langchain
 langchain-openai
+langgraph
 chromadb
 python-dotenv
 requests

@@ -1,7 +1,6 @@
 """
 Vector store module.
 Uses ChromaDB to persist interview sessions keyed by job description embeddings.
-When a similar job description is submitted, the previous session can be resumed.
 """
 
 import json
@@ -9,11 +8,9 @@ import hashlib
 import chromadb
 from pathlib import Path
 
-# Persistent storage directory
-_DB_DIR = Path(__file__).parent / "chroma_db"
+_DB_DIR = Path(__file__).resolve().parent.parent / "chroma_db"
 _COLLECTION_NAME = "interview_sessions"
 
-# Similarity threshold — lower distance = more similar (cosine distance)
 SIMILARITY_THRESHOLD = 0.25
 
 
@@ -34,13 +31,7 @@ def _make_id(job_desc: str) -> str:
 def search_similar_session(job_desc: str) -> dict | None:
     """
     Search for a previously stored interview session with a similar job description.
-
-    Args:
-        job_desc: The new job description text.
-
-    Returns:
-        dict with keys {id, job_desc, messages, distance} if a similar session
-        is found within the threshold, else None.
+    Returns dict {id, job_desc, messages, distance} or None.
     """
     collection = _get_collection()
 
@@ -73,20 +64,10 @@ def search_similar_session(job_desc: str) -> dict | None:
 
 
 def save_session(job_desc: str, messages: list[dict]) -> str:
-    """
-    Save or update an interview session in the vector store.
-
-    Args:
-        job_desc: The job description text (used for embedding).
-        messages: The conversation history list.
-
-    Returns:
-        The session ID.
-    """
+    """Save or update an interview session in the vector store."""
     collection = _get_collection()
     session_id = _make_id(job_desc)
 
-    # Strip tools_used from messages before storing (not needed for resume)
     clean_messages = [
         {"role": m["role"], "content": m["content"]}
         for m in messages
